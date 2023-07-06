@@ -1,6 +1,13 @@
 from dataclasses import dataclass, field
 import math
-from typing import Self
+import random
+
+# The Self type is a python3.11 feature which pypy doesn't support.
+try:
+    from typing import Self
+except ImportError:
+    from typing import Any
+    Self = Any
 
 from PIL import Image
 
@@ -41,14 +48,17 @@ class Vec3:
         self.x += other.x
         self.y += other.y
         self.z += other.z
+        return self
 
     def __imul__(self, t: float):
         self.x *= t
         self.y *= t
         self.z *= t
+        return self
 
     def __idiv__(self, t: float):
-        self *= 1 / t
+        self *= (1 / t)
+        return self
 
     def dot(self, other) -> float:
         return self.x * other.x + self.y * other.y + self.z * other.z
@@ -184,6 +194,7 @@ class Camera:
     scene: Scene
     viewport_height: float = 2.0
     focal_length: float = 1.0
+    samples: int = 100
 
     @property
     def image_height(self) -> int:
@@ -193,24 +204,31 @@ class Camera:
     def viewport_width(self) -> float:
         return self.aspect_ratio * self.viewport_height
 
-    def render(self) -> list[list[Color]]:
+    def perform_one_pass(self, current_pixels: list[list[Color]]) -> None:
         origin = Point3(0.0, 0.0, 0.0)
         horizontal = Vec3(self.viewport_width, 0.0, 0.0)
         vertical = Vec3(0.0, self.viewport_height, 0.0)
         lower_left_corner = origin - horizontal / 2 - vertical / 2 - Vec3(
             0.0, 0.0, self.focal_length)
 
-        pixels = [[None
-                   for _ in range(self.image_width)]
-                  for _ in range(self.image_height)]
         for j in range(self.image_height):
             for i in range(self.image_width):
-                u = i / (self.image_width - 1)
-                v = j / (self.image_height - 1)
+                u = (i + random.random()) / (self.image_width - 1)
+                v = (j + random.random()) / (self.image_height - 1)
                 r = Ray(
                     origin,
                     lower_left_corner + u * horizontal + v * vertical - origin)
-                pixels[j][i] = self.scene.trace(r)
+                current_pixels[j][i] += self.scene.trace(r)
+
+    def render(self) -> list[list[Color]]:
+        pixels = [[Color(0, 0, 0)
+                   for _ in range(self.image_width)]
+                  for _ in range(self.image_height)]
+        for _ in range(self.samples):
+            self.perform_one_pass(pixels)
+        for i in range(len(pixels)):
+            for j in range(len(pixels[i])):
+                pixels[i][j] /= self.samples
         return pixels
 
     def to_file(self, file_name: str):

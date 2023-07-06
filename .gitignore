@@ -1,4 +1,8 @@
+bin
+pypy
 venv
+*.prof
+*.log
 *.jpg
 *.png
 *.ppm

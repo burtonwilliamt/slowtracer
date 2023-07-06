@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 import math
 import random
+import time
 
 # The Self type is a python3.11 feature which pypy doesn't support.
 try:
@@ -194,7 +195,7 @@ class Camera:
     scene: Scene
     viewport_height: float = 2.0
     focal_length: float = 1.0
-    samples: int = 100
+    samples: int = 10
 
     @property
     def image_height(self) -> int:
@@ -232,7 +233,9 @@ class Camera:
         return pixels
 
     def to_file(self, file_name: str):
+        beginning = time.time()
         pixels = self.render()
+        print(f'Rendering took {time.time() - beginning}')
         with open('temp.ppm', 'wt', encoding='utf-8') as ppm:
             ppm.write(f'P3\n{self.image_width} {self.image_height}\n255\n')
             for j in range(self.image_height - 1, -1, -1):

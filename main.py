@@ -73,6 +73,28 @@ class Vec3:
     def as_color_str(self) -> str:
         return f'{int(255.999 * self.x)} {int(255.999 * self.y)} {int(255.999 * self.z)}\n'
 
+    @classmethod
+    def random(cls,
+               lower: float | None = None,
+               upper: float | None = None) -> Self:
+
+        def rand_float(lower, upper):
+            if lower is None or upper is None:
+                return random.random()
+            else:
+                return random.random() * (upper - lower) + lower
+
+        return cls(rand_float(lower, upper), rand_float(lower, upper),
+                   rand_float(lower, upper))
+
+    @classmethod
+    def random_in_unit_sphere(cls):
+        while True:
+            p = cls.random(-1, 1)
+            if p.length_squared() >= 1:
+                continue
+            return p
+
 
 class Point3(Vec3):
     pass
@@ -171,10 +193,17 @@ class HittableList(Hittable):
 class Scene:
     _hittables: HittableList = field(default_factory=HittableList)
 
-    def trace(self, r: Ray) -> Color:
+    def trace(self, r: Ray, depth: int) -> Color:
+        if depth <= 0:
+            return Color(0, 0, 0)
+
         record = self._hittables.hit(r, t_min=0.0, t_max=10000.0)
         if record is not None:
-            return 0.5 * (record.normal + 1)
+            target = record.point + record.normal + Point3.random_in_unit_sphere(
+            )
+            return 0.5 * self.trace(
+                Ray(origin=record.point, direction=target - record.point),
+                depth - 1)
 
         # Background gradient
         unit_direction = r.direction / math.sqrt(r.direction.dot(r.direction))
@@ -194,7 +223,8 @@ class Camera:
     scene: Scene
     viewport_height: float = 2.0
     focal_length: float = 1.0
-    num_samples: int = 100
+    num_samples: int = 10
+    max_bounces: int = 50
 
     @property
     def image_height(self) -> int:
@@ -218,7 +248,7 @@ class Camera:
                 r = Ray(
                     origin,
                     lower_left_corner + u * horizontal + v * vertical - origin)
-                current_pixels[j][i] += self.scene.trace(r)
+                current_pixels[j][i] += self.scene.trace(r, self.max_bounces)
 
     def render(self) -> list[list[Color]]:
         pixels = [[Color(0, 0, 0)
@@ -239,9 +269,12 @@ class Camera:
             ppm.write(f'P3\n{self.image_width} {self.image_height}\n255\n')
             for j in range(self.image_height - 1, -1, -1):
                 for i in range(self.image_width):
-                    pixel = pixels[j][i] * 255.999
+                    pixel = pixels[j][i]
                     ppm.write(
-                        f'{int(pixel.x)} {int(pixel.y)} {int(pixel.z)}\n')
+                        f'{int(255.999 * math.sqrt(pixel.x))} '
+                        f'{int(255.999 * math.sqrt(pixel.y))} '
+                        f'{int(255.999 * math.sqrt(pixel.z))}\n'
+                    )
         img = Image.open('temp.ppm')
         img.save(file_name)
 

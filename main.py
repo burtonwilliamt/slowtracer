@@ -10,6 +10,7 @@ except ImportError:
     from typing import Any
     Self = Any
 
+import numpy as np
 from PIL import Image
 
 
@@ -19,13 +20,29 @@ class Vec3:
     y: float = 0.0
     z: float = 0.0
 
+    def __init__(self, data):
+        self.x = data[0]
+        self.y = data[1]
+        self.z = data[2]
+
+    def __getitem__(self, key):
+        return [self.x, self.y, self.z][key]
+
+    def __setitem__(self, key, value):
+        if key == 0:
+            self.x = value
+        elif key == 1:
+            self.y = value
+        elif key == 2:
+            self.z = value
+
     def __neg__(self) -> Self:
-        return Vec3(-self.x, -self.y, -self.z)
+        return Vec3([-self.x, -self.y, -self.z])
 
     def __add__(self, other) -> Self:
         if isinstance(other, Vec3):
-            return Vec3(self.x + other.x, self.y + other.y, self.z + other.z)
-        return Vec3(self.x + other, self.y + other, self.z + other)
+            return Vec3([self.x + other.x, self.y + other.y, self.z + other.z])
+        return Vec3([self.x + other, self.y + other, self.z + other])
 
     #def __radd__(self, other) -> Self:
     #return self + other
@@ -37,13 +54,13 @@ class Vec3:
     #return -self + other
 
     def __mul__(self, other) -> Self:
-        return Vec3(self.x * other, self.y * other, self.z * other)
+        return Vec3([self.x * other, self.y * other, self.z * other])
 
     def __rmul__(self, other) -> Self:
         return self * other
 
     def __truediv__(self, other) -> Self:
-        return Vec3(self.x / other, self.y / other, self.z / other)
+        return Vec3([self.x / other, self.y / other, self.z / other])
 
     def __iadd__(self, other):
         self.x += other.x
@@ -80,6 +97,15 @@ class Point3(Vec3):
 
 class Color(Vec3):
     pass
+
+"""
+def _builder(data) -> np.ndarray:
+    return np.array(data, dtype=np.float32)
+
+Vec3 = _builder
+Point3 = _builder
+Color = _builder
+"""
 
 
 @dataclass
@@ -125,9 +151,9 @@ class Sphere(Hittable):
         # Simplified:
         # t^2b dot b  + 2tb dot (A - C) + (A - C) dot (A - C) - r^2
         oc = r.origin - self.center
-        a = r.direction.length_squared()
+        a = r.direction.dot(r.direction)
         half_b = oc.dot(r.direction)
-        c = oc.length_squared() - self.radius * self.radius
+        c = oc.dot(oc) - self.radius * self.radius
         discriminant = half_b * half_b - a * c
         if discriminant < 0:
             return None
@@ -174,14 +200,13 @@ class Scene:
     def trace(self, r: Ray) -> Color:
         record = self._hittables.hit(r, t_min=0.0, t_max=10000.0)
         if record is not None:
-            return 0.5 * Color(record.normal.x + 1, record.normal.y + 1,
-                               record.normal.z + 1)
+            return 0.5 * (record.normal + 1)
 
         # Background gradient
-        unit_direction = r.direction / r.direction.length()
-        gradient = 0.5 * (unit_direction.y + 1.0)
-        return (1.0 - gradient) * Color(1.0, 1.0, 1.0) + gradient * Color(
-            0.5, 0.7, 1.0)
+        unit_direction = r.direction / math.sqrt(r.direction.dot(r.direction))
+        gradient = 0.5 * (unit_direction[1] + 1.0)
+        return (1.0 - gradient) * Color([1.0, 1.0, 1.0]) + gradient * Color(
+            [0.5, 0.7, 1.0])
 
     def add(self, hittable: Hittable) -> None:
         self._hittables.add(hittable)
@@ -195,7 +220,7 @@ class Camera:
     scene: Scene
     viewport_height: float = 2.0
     focal_length: float = 1.0
-    samples: int = 10
+    num_samples: int = 100
 
     @property
     def image_height(self) -> int:
@@ -206,11 +231,11 @@ class Camera:
         return self.aspect_ratio * self.viewport_height
 
     def perform_one_pass(self, current_pixels: list[list[Color]]) -> None:
-        origin = Point3(0.0, 0.0, 0.0)
-        horizontal = Vec3(self.viewport_width, 0.0, 0.0)
-        vertical = Vec3(0.0, self.viewport_height, 0.0)
+        origin = Point3([0.0, 0.0, 0.0])
+        horizontal = Vec3([self.viewport_width, 0.0, 0.0])
+        vertical = Vec3([0.0, self.viewport_height, 0.0])
         lower_left_corner = origin - horizontal / 2 - vertical / 2 - Vec3(
-            0.0, 0.0, self.focal_length)
+            [0.0, 0.0, self.focal_length])
 
         for j in range(self.image_height):
             for i in range(self.image_width):
@@ -222,14 +247,14 @@ class Camera:
                 current_pixels[j][i] += self.scene.trace(r)
 
     def render(self) -> list[list[Color]]:
-        pixels = [[Color(0, 0, 0)
+        pixels = [[Color([0, 0, 0])
                    for _ in range(self.image_width)]
                   for _ in range(self.image_height)]
-        for _ in range(self.samples):
+        for _ in range(self.num_samples):
             self.perform_one_pass(pixels)
         for i in range(len(pixels)):
             for j in range(len(pixels[i])):
-                pixels[i][j] /= self.samples
+                pixels[i][j] /= self.num_samples
         return pixels
 
     def to_file(self, file_name: str):
@@ -240,15 +265,17 @@ class Camera:
             ppm.write(f'P3\n{self.image_width} {self.image_height}\n255\n')
             for j in range(self.image_height - 1, -1, -1):
                 for i in range(self.image_width):
-                    ppm.write(pixels[j][i].as_color_str())
+                    pixel = pixels[j][i] * 255.999
+                    ppm.write(
+                        f'{int(pixel[0])} {int(pixel[1])} {int(pixel[2])}\n')
         img = Image.open('temp.ppm')
         img.save(file_name)
 
 
 def main():
     scene = Scene()
-    scene.add(Sphere(Point3(0.0, 0.0, -1.0), 0.5, Color(1.0, 0.0, 0.0)))
-    scene.add(Sphere(Point3(0.0, -100.5, -1.0), 100, Color(1.0, 0.0, 0.0)))
+    scene.add(Sphere(Point3([0.0, 0.0, -1.0]), 0.5, Color([1.0, 0.0, 0.0])))
+    scene.add(Sphere(Point3([0.0, -100.5, -1.0]), 100, Color([1.0, 0.0, 0.0])))
     camera = Camera(aspect_ratio=16 / 9, image_width=400, scene=scene)
     camera.to_file('out.png')
 

@@ -4,8 +4,6 @@ import time
 import numpy as np
 from PIL import Image
 
-INF = 10000.0
-
 
 @dataclass
 class HitRecords:
@@ -15,31 +13,66 @@ class HitRecords:
 
 
 @dataclass
-class Scene:
-    _spheres: list = field(default_factory=list)
-
-    def trace(self, origins, directions) -> HitRecords:
-        pass
-
-
-def rowwise_dot(a, b) -> np.ndarray:
-    return np.sum(a * b, axis=-1)
-
-
-@dataclass
 class Sphere:
     center: np.ndarray
     radius: float
 
-    def hits(self, origins, directions) -> np.ndarray:
+    def hits(
+        self,
+        origins: np.ndarray,
+        directions: np.ndarray,
+        t_min: np.ndarray,
+        t_max: np.ndarray,
+    ) -> np.ndarray:
         oc = origins - self.center
         a = rowwise_dot(directions, directions)
         half_b = rowwise_dot(oc, directions)
         c = rowwise_dot(oc, oc) - self.radius**2
         discriminant = half_b * half_b - a * c
-        neg_disc = discriminant < 0
-        return (1 - neg_disc) * (-half_b - np.sqrt(
-            (1 - neg_disc) * discriminant)) / a + (neg_disc) * -1.0
+        good_discriminants = discriminant >= 0
+        # Zero out the negative descriminats so we can do sqrt next.
+        discriminant *= (good_discriminants)
+        sqrtd = np.sqrt(discriminant)
+
+        roota = (-half_b - sqrtd) / a
+        use_root_a = good_discriminants & (roota >= t_min) & (roota <= t_max)
+        rootb = (-half_b + sqrtd) / a
+        use_root_b = good_discriminants & np.bitwise_not(use_root_a) & (rootb >= t_min) & (rootb
+                                                                      <= t_max)
+
+        # These are the correct roots to use, or -1
+        hit_ts = use_root_a * roota + use_root_b * rootb + (np.bitwise_not(
+            use_root_a) & np.bitwise_not(use_root_b)) * -1
+
+        points = origins + directions * hit_ts[:, np.newaxis]
+
+        normals = (points - self.center) / self.radius
+
+        return HitRecords(hit_ts, points, normals)
+
+
+@dataclass
+class Scene:
+    _spheres: list[Sphere] = field(default_factory=list)
+
+    def trace(
+        self,
+        origins: np.ndarray,
+        directions: np.ndarray,
+        t_min: np.ndarray,
+        t_max: np.ndarray,
+    ) -> HitRecords:
+        for s in self._spheres:
+            records = s.hits(origins, directions, t_min, t_max)
+            # TODO find the record with smallest t for each ray.
+            return records
+
+    def add(self, sphere: Sphere):
+        self._spheres.append(sphere)
+
+
+def rowwise_dot(a, b) -> np.ndarray:
+    return np.sum(a * b, axis=-1)
 
 
 def unit_vectors(directions) -> np.ndarray:
@@ -47,20 +80,23 @@ def unit_vectors(directions) -> np.ndarray:
 
 
 def ray_colors(origins, directions):
-    sphere = Sphere(center=np.array([0, 0, -1]), radius=0.5)
-    hit_ts = sphere.hits(origins, directions)
-    rays_that_hit_sphere = hit_ts > 0
-
-    normals = unit_vectors(origins + directions * hit_ts[:, np.newaxis] -
-                           np.array([0, 0, -1]))
-    #print(normals.shape)
-    color_at_t = 0.5 * (normals + 1)
+    scene = Scene()
+    scene.add(Sphere(center=np.array([0, 0, -1]), radius=0.5))
+    records = scene.trace(
+        origins,
+        directions,
+        t_min=np.zeros(directions.shape[0]),
+        t_max=np.full(directions.shape[0], np.inf),
+    )
+    rays_that_hit_sphere = records.hit_ts > 0
+    color_at_t = 0.5 * (records.normals + 1)
 
     unit_directions = unit_vectors(directions)
     t = 0.5 * (unit_directions[..., 1] + 1)
     background = (1 - t)[:, np.newaxis] * np.array(
         [1, 1, 1]) + t[:, np.newaxis] * np.array([0.5, 0.7, 1.0])
 
+    # NOTE: inlined IF function here
     return rays_that_hit_sphere[:, np.newaxis] * color_at_t + (
         1 - rays_that_hit_sphere)[:, np.newaxis] * background
 

@@ -223,7 +223,7 @@ class Camera:
     scene: Scene
     viewport_height: float = 2.0
     focal_length: float = 1.0
-    num_samples: int = 10
+    num_samples: int = 1
     max_bounces: int = 50
 
     @property

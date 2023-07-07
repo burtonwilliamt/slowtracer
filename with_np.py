@@ -5,6 +5,15 @@ import numpy as np
 from PIL import Image
 
 
+# Utility functions
+def rowwise_dot(a, b) -> np.ndarray:
+    return np.sum(a * b, axis=-1)
+
+
+def unit_vectors(directions) -> np.ndarray:
+    return directions / np.linalg.norm(directions, axis=1, keepdims=True)
+
+
 @dataclass
 class HitRecords:
     hit_ts: np.ndarray
@@ -23,7 +32,7 @@ class Sphere:
         directions: np.ndarray,
         t_min: np.ndarray,
         t_max: np.ndarray,
-    ) -> np.ndarray:
+    ) -> HitRecords:
         oc = origins - self.center
         a = rowwise_dot(directions, directions)
         half_b = rowwise_dot(oc, directions)
@@ -37,12 +46,12 @@ class Sphere:
         roota = (-half_b - sqrtd) / a
         use_root_a = good_discriminants & (roota >= t_min) & (roota <= t_max)
         rootb = (-half_b + sqrtd) / a
-        use_root_b = good_discriminants & np.bitwise_not(use_root_a) & (rootb >= t_min) & (rootb
-                                                                      <= t_max)
+        use_root_b = good_discriminants & np.bitwise_not(use_root_a) & (
+            rootb >= t_min) & (rootb <= t_max)
 
         # These are the correct roots to use, or -1
-        hit_ts = use_root_a * roota + use_root_b * rootb + (np.bitwise_not(
-            use_root_a) & np.bitwise_not(use_root_b)) * -1
+        hit_ts = use_root_a * roota + use_root_b * rootb + (
+            np.bitwise_not(use_root_a) & np.bitwise_not(use_root_b)) * -1
 
         points = origins + directions * hit_ts[:, np.newaxis]
 
@@ -62,43 +71,52 @@ class Scene:
         t_min: np.ndarray,
         t_max: np.ndarray,
     ) -> HitRecords:
+        result = None
         for s in self._spheres:
             records = s.hits(origins, directions, t_min, t_max)
-            # TODO find the record with smallest t for each ray.
-            return records
+            if result is None:
+                result = records
+                continue
+            # The current value hit (records.hit_ts > 0)
+            # And either we haven't seen a hit (result.hit_ts == -1) OR
+            # this hit is better ()
+            better_hits = (records.hit_ts > 0) & (
+                (result.hit_ts == -1) | (records.hit_ts < result.hit_ts))
+
+            not_better_hits = np.bitwise_not(better_hits)
+
+            result.hit_ts *= not_better_hits
+            result.hit_ts += records.hit_ts * better_hits
+
+            result.points *= not_better_hits[:, np.newaxis]
+            result.points += records.points * better_hits[:, np.newaxis]
+
+            result.normals *= not_better_hits[:, np.newaxis]
+            result.normals += records.normals * better_hits[:, np.newaxis]
+
+        return result
 
     def add(self, sphere: Sphere):
         self._spheres.append(sphere)
 
+    def ray_colors(self, origins, directions):
+        records = self.trace(
+            origins,
+            directions,
+            t_min=np.zeros(directions.shape[0]),
+            t_max=np.full(directions.shape[0], np.inf),
+        )
+        rays_that_hit_sphere = records.hit_ts > 0
+        color_at_t = 0.5 * (records.normals + 1)
 
-def rowwise_dot(a, b) -> np.ndarray:
-    return np.sum(a * b, axis=-1)
+        unit_directions = unit_vectors(directions)
+        t = 0.5 * (unit_directions[..., 1] + 1)
+        background = (1 - t)[:, np.newaxis] * np.array(
+            [1, 1, 1]) + t[:, np.newaxis] * np.array([0.5, 0.7, 1.0])
 
-
-def unit_vectors(directions) -> np.ndarray:
-    return directions / np.linalg.norm(directions, axis=1, keepdims=True)
-
-
-def ray_colors(origins, directions):
-    scene = Scene()
-    scene.add(Sphere(center=np.array([0, 0, -1]), radius=0.5))
-    records = scene.trace(
-        origins,
-        directions,
-        t_min=np.zeros(directions.shape[0]),
-        t_max=np.full(directions.shape[0], np.inf),
-    )
-    rays_that_hit_sphere = records.hit_ts > 0
-    color_at_t = 0.5 * (records.normals + 1)
-
-    unit_directions = unit_vectors(directions)
-    t = 0.5 * (unit_directions[..., 1] + 1)
-    background = (1 - t)[:, np.newaxis] * np.array(
-        [1, 1, 1]) + t[:, np.newaxis] * np.array([0.5, 0.7, 1.0])
-
-    # NOTE: inlined IF function here
-    return rays_that_hit_sphere[:, np.newaxis] * color_at_t + (
-        1 - rays_that_hit_sphere)[:, np.newaxis] * background
+        # NOTE: inlined IF function here
+        return rays_that_hit_sphere[:, np.newaxis] * color_at_t + (
+            1 - rays_that_hit_sphere)[:, np.newaxis] * background
 
 
 @dataclass
@@ -136,7 +154,7 @@ class Camera:
         directions.shape = (self.image_height * self.image_width, 3)
         origins = np.full_like(directions, 0)
 
-        results = ray_colors(origins, directions)
+        results = self.scene.ray_colors(origins, directions)
 
         results.shape = (self.image_height, self.image_width, 3)
 
@@ -169,6 +187,8 @@ class Camera:
 
 def main():
     scene = Scene()
+    scene.add(Sphere(center=np.array([0, 0, -1]), radius=0.5))
+    scene.add(Sphere(center=np.array([0, -100.5, -1]), radius=100))
     camera = Camera(aspect_ratio=16 / 9, image_width=400, scene=scene)
     camera.to_file('out.png')
 

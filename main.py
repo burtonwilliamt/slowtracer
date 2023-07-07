@@ -10,7 +10,6 @@ except ImportError:
     from typing import Any
     Self = Any
 
-import numpy as np
 from PIL import Image
 
 
@@ -20,29 +19,13 @@ class Vec3:
     y: float = 0.0
     z: float = 0.0
 
-    def __init__(self, data):
-        self.x = data[0]
-        self.y = data[1]
-        self.z = data[2]
-
-    def __getitem__(self, key):
-        return [self.x, self.y, self.z][key]
-
-    def __setitem__(self, key, value):
-        if key == 0:
-            self.x = value
-        elif key == 1:
-            self.y = value
-        elif key == 2:
-            self.z = value
-
     def __neg__(self) -> Self:
-        return Vec3([-self.x, -self.y, -self.z])
+        return Vec3(-self.x, -self.y, -self.z)
 
     def __add__(self, other) -> Self:
         if isinstance(other, Vec3):
-            return Vec3([self.x + other.x, self.y + other.y, self.z + other.z])
-        return Vec3([self.x + other, self.y + other, self.z + other])
+            return Vec3(self.x + other.x, self.y + other.y, self.z + other.z)
+        return Vec3(self.x + other, self.y + other, self.z + other)
 
     #def __radd__(self, other) -> Self:
     #return self + other
@@ -54,13 +37,13 @@ class Vec3:
     #return -self + other
 
     def __mul__(self, other) -> Self:
-        return Vec3([self.x * other, self.y * other, self.z * other])
+        return Vec3(self.x * other, self.y * other, self.z * other)
 
     def __rmul__(self, other) -> Self:
         return self * other
 
     def __truediv__(self, other) -> Self:
-        return Vec3([self.x / other, self.y / other, self.z / other])
+        return Vec3(self.x / other, self.y / other, self.z / other)
 
     def __iadd__(self, other):
         self.x += other.x
@@ -97,15 +80,6 @@ class Point3(Vec3):
 
 class Color(Vec3):
     pass
-
-"""
-def _builder(data) -> np.ndarray:
-    return np.array(data, dtype=np.float32)
-
-Vec3 = _builder
-Point3 = _builder
-Color = _builder
-"""
 
 
 @dataclass
@@ -204,9 +178,9 @@ class Scene:
 
         # Background gradient
         unit_direction = r.direction / math.sqrt(r.direction.dot(r.direction))
-        gradient = 0.5 * (unit_direction[1] + 1.0)
-        return (1.0 - gradient) * Color([1.0, 1.0, 1.0]) + gradient * Color(
-            [0.5, 0.7, 1.0])
+        gradient = 0.5 * (unit_direction.y + 1.0)
+        return (1.0 - gradient) * Color(1.0, 1.0, 1.0) + gradient * Color(
+            0.5, 0.7, 1.0)
 
     def add(self, hittable: Hittable) -> None:
         self._hittables.add(hittable)
@@ -231,11 +205,11 @@ class Camera:
         return self.aspect_ratio * self.viewport_height
 
     def perform_one_pass(self, current_pixels: list[list[Color]]) -> None:
-        origin = Point3([0.0, 0.0, 0.0])
-        horizontal = Vec3([self.viewport_width, 0.0, 0.0])
-        vertical = Vec3([0.0, self.viewport_height, 0.0])
+        origin = Point3(0.0, 0.0, 0.0)
+        horizontal = Vec3(self.viewport_width, 0.0, 0.0)
+        vertical = Vec3(0.0, self.viewport_height, 0.0)
         lower_left_corner = origin - horizontal / 2 - vertical / 2 - Vec3(
-            [0.0, 0.0, self.focal_length])
+            0.0, 0.0, self.focal_length)
 
         for j in range(self.image_height):
             for i in range(self.image_width):
@@ -247,7 +221,7 @@ class Camera:
                 current_pixels[j][i] += self.scene.trace(r)
 
     def render(self) -> list[list[Color]]:
-        pixels = [[Color([0, 0, 0])
+        pixels = [[Color(0, 0, 0)
                    for _ in range(self.image_width)]
                   for _ in range(self.image_height)]
         for _ in range(self.num_samples):
@@ -267,15 +241,15 @@ class Camera:
                 for i in range(self.image_width):
                     pixel = pixels[j][i] * 255.999
                     ppm.write(
-                        f'{int(pixel[0])} {int(pixel[1])} {int(pixel[2])}\n')
+                        f'{int(pixel.x)} {int(pixel.y)} {int(pixel.z)}\n')
         img = Image.open('temp.ppm')
         img.save(file_name)
 
 
 def main():
     scene = Scene()
-    scene.add(Sphere(Point3([0.0, 0.0, -1.0]), 0.5, Color([1.0, 0.0, 0.0])))
-    scene.add(Sphere(Point3([0.0, -100.5, -1.0]), 100, Color([1.0, 0.0, 0.0])))
+    scene.add(Sphere(Point3(0.0, 0.0, -1.0), 0.5, Color(1.0, 0.0, 0.0)))
+    scene.add(Sphere(Point3(0.0, -100.5, -1.0), 100, Color(1.0, 0.0, 0.0)))
     camera = Camera(aspect_ratio=16 / 9, image_width=400, scene=scene)
     camera.to_file('out.png')
 

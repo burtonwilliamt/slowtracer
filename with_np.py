@@ -127,8 +127,9 @@ class Camera:
     scene: Scene
     viewport_height: float = 2.0
     focal_length: float = 1.0
-    num_samples: int = 1
+    num_samples: int = 100
     max_bounces: int = 50
+    rng: np.random.Generator = np.random.default_rng(seed=42)
 
     @property
     def image_height(self) -> int:
@@ -146,8 +147,8 @@ class Camera:
                              np.array([0, 0, self.focal_length]))
 
         j, i, _ = np.indices(current_pixels.shape)
-        u = i / (self.image_width - 1)
-        v = j / (self.image_height - 1)
+        u = (i + self.rng.random(i.shape)) / (self.image_width - 1)
+        v = (j + self.rng.random(j.shape)) / (self.image_height - 1)
 
         directions = (lower_left_corner + u * horizontal + v * vertical -
                       origin)
